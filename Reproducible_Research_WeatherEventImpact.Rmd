@@ -1,0 +1,201 @@
+---
+title: "Reproducible Research: Project 2 - Severe Weather Event Impact"
+author: "Ronda Hutchin"
+date:  "June 27 2020"
+output: html_document
+  html_document:
+    keep_md: true
+
+## INTRODUCTION AND ASSIGNMENT
+The basic goal of this assignment is to explore the NOAA Storm Database and answer some basic questions about severe weather events. Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. 
+
+Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. 
+The NOAA Storm database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+Each of the two questions has a DATA PROCESSING and RESULTS section.  There is also a RESULTS SUMMARY section at the end.
+
+## SYNPOSIS
+Using the U.S. National Oceanic and Atmospheric Administration's (NOAA) Storm database, analysis of the data from 1950 to November 2011 concludes:
+	(1) Tornados cause the most harm to population as measured by fatalities and injuries. 
+	(2) Floods cause the most economic damage to property, and Drought causes the most economic damage to crops.  
+The NOAA storm database records specific data (date, location, weather event type, estimated fatalities & injuries, estimated damage) of major storms and weather events in the United States. 
+The analysis of the data was use to identify the weather events causing the most harm (fatalities and injuries) to the population and/or the greatest economic consequences (damages).
+
+##DATA PROCESSING for Question 1: What weather events causing the most harm to population (health)?
+##Step 1 Get Data
+Get the raw data file in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. 
+You can download the file from the course web site for Reproducible Research Project 2 Storm Data.
+The function Bunzip is used to unzip the raw data file and save it to the working directory in csv format.
+Use the dim function to get size information on how the large dataset.
+```{r}
+library(data.table)
+library(ggplot2)
+library(scales)
+library(lubridate)
+library(dplyr)
+library(R.utils)
+library(rmarkdown)
+library(knitr)
+
+if(!file.exists("RawStormData.csv"))
+{bunzip2("repdata_data_StormData.csv.bz2","RawStormData.csv",remove=F)}
+
+StormData <- read.csv("RawStormData.csv", header=TRUE,sep=",")
+dim(StormData)
+
+```
+## Step 2 Get only the data needed for analysis
+Using the information provided in the NOAA website https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf 
+determine which fields are needed for the analysis.
+The Data needed:	
+			(1) Event Types (EVTYPE)
+			(2) FATALITIES (column 23)
+			(3) INJURIES (column 24)
+			(4) Property Damage (PROPDMG - column 25)
+			(5) Property Damage Exponet (PROPDAMAGE - column 26)
+			(6) Crop Damage (CROPDMG - column 27)
+			(7) Crop Damage Exponet (CROPDAMAGE - column 28)
+
+```{r}
+StormDataAnalyzed <- StormData[ , c(8, 23:28)]
+rm(StormData)
+names(StormDataAnalyzed)
+summary(StormDataAnalyzed)
+```
+## Step 3 Analyze the data to determine the weather events causing the most harm (fatalities and injuries)
+Get the top 10 weather events that inflict the most harm on the population in the form of FATALITIES and INJURIES. 
+Analyze the top 10 of each before plotting to determine the best way to present the data.
+The "top 10" is an arbitrary number selected, but for reproducibility it is documented as what was selected.
+```{r}
+FatalitiesStormData <- aggregate(FATALITIES~EVTYPE, data=StormDataAnalyzed, sum, na.rm = TRUE) 
+FatalitiesStormData <- arrange(FatalitiesStormData, desc(FATALITIES))
+TopFatalitiesStormData <- FatalitiesStormData[1:10, ]
+TopFatalitiesStormData
+
+InjuriesStormData <- aggregate(INJURIES~EVTYPE, data=StormDataAnalyzed, sum, na.rm = TRUE) 
+InjuriesStormData <- arrange(InjuriesStormData, desc(INJURIES))
+TOPInjuriesStormData <- InjuriesStormData[1:10, ]
+TOPInjuriesStormData
+
+```
+## RESULTS
+## Answer to Question #1 is Tornados
+## Step 4 Summary analysis of weather events causing the most harm (fatalities and injuries)
+Tornadoes cause the most fatalities AND the most injuries, and plotting them both on a single bar chart displays the data concisely.
+
+```{r}
+HarmfulStormData <- aggregate(cbind(FATALITIES,INJURIES)~EVTYPE, data=StormDataAnalyzed, sum, na.rm = TRUE) 
+TopHarmfulStormData <- arrange(HarmfulStormData, desc(FATALITIES+INJURIES))
+TopHarmfulStormData <- TopHarmfulStormData[1:10, ]
+TopHarmfulStormData
+
+
+HarmfulEVTYPE <- TopHarmfulStormData$EVTYPE
+TopHarmfulStormData2 <- as.matrix(t(TopHarmfulStormData[,-1]))
+colnames(TopHarmfulStormData2) <- HarmfulEVTYPE
+
+par(mar=c(12,4,3,2))
+barplot(TopHarmfulStormData2, col = c("Red", "Yellow"), beside = T, ylim = c(0,90000), las = 2,  main = "Weather Events Causing the Most Harm to Population")
+legend("topright", c("Fatalities", "Injuries"), fill = c("Red", "Yellow"), bty = "HarmfulEVTYPE")
+
+
+```
+
+## DATA PROCESSING for Question 2: What weather events have the most economic impact (cost)?
+## Step 1 Get Data and cleanup exponent data
+Use the same dataset defined in the "Question 1 Step 1 - StormDataAnalyzed", and analyze the Crop and property damage exponent data to determine significance and population of data by exponent. Per page 12 fo the NOAA Storm Database  documentation: "values are in Estimates should be rounded to three significant digits, followed by an alphabetical character signifying the magnitude of the number, i.e., 1.55B for $1,550,000,000. Alphabetical characters used to signify magnitude include “K” for thousands, “M” for millions, and “B” for billions."  
+The exponent values used in the analysis are:
+			(1) K or k = thousands (1000)
+			(2) M or m = millions (1000000)
+			(3) B or b = billions (1000000000)
+			(4) blank = 1
+			(5) all others are small counts and set to zero and not included in cost analysis
+Exponent values CROPDMGEXP2 and PROPDMGEXP2 are set zero by default.
+			
+
+```{r}
+unique(StormDataAnalyzed$CROPDMGEXP)
+table(StormDataAnalyzed$CROPDMGEXP)
+unique(StormDataAnalyzed$PROPDMGEXP)
+table(StormDataAnalyzed$PROPDMGEXP)
+
+StormDataAnalyzed$CROPDMGEXP2 <- 0
+
+StormDataAnalyzed$CROPDMGEXP2[StormDataAnalyzed$CROPDMGEXP == ""] <- 1
+StormDataAnalyzed$CROPDMGEXP2[StormDataAnalyzed$CROPDMGEXP == "k"] <- 1000
+StormDataAnalyzed$CROPDMGEXP2[StormDataAnalyzed$CROPDMGEXP == "K"] <- 1000
+StormDataAnalyzed$CROPDMGEXP2[StormDataAnalyzed$CROPDMGEXP == "m"] <- 1000000
+StormDataAnalyzed$CROPDMGEXP2[StormDataAnalyzed$CROPDMGEXP == "M"] <- 1000000
+StormDataAnalyzed$CROPDMGEXP2[StormDataAnalyzed$CROPDMGEXP == "b"] <- 1000000000
+StormDataAnalyzed$CROPDMGEXP2[StormDataAnalyzed$CROPDMGEXP == "B"] <- 1000000000
+
+table(StormDataAnalyzed$CROPDMGEXP2)
+
+StormDataAnalyzed$PROPDMGEXP2 <- 0
+
+StormDataAnalyzed$PROPDMGEXP2[StormDataAnalyzed$PROPDMGEXP == ""] <- 1
+StormDataAnalyzed$PROPDMGEXP2[StormDataAnalyzed$PROPDMGEXP == "k"] <- 1000
+StormDataAnalyzed$PROPDMGEXP2[StormDataAnalyzed$PROPDMGEXP == "K"] <- 1000
+StormDataAnalyzed$PROPDMGEXP2[StormDataAnalyzed$PROPDMGEXP == "m"] <- 1000000
+StormDataAnalyzed$PROPDMGEXP2[StormDataAnalyzed$PROPDMGEXP == "M"] <- 1000000
+StormDataAnalyzed$PROPDMGEXP2[StormDataAnalyzed$PROPDMGEXP == "b"] <- 1000000000
+StormDataAnalyzed$PROPDMGEXP2[StormDataAnalyzed$PROPDMGEXP == "B"] <- 1000000000
+
+table(StormDataAnalyzed$PROPDMGEXP2)
+
+```
+
+## Step 2 Calculate the Property and Crop damage cost
+
+```{r}
+
+StormDataAnalyzed$PROPDMGCost <- StormDataAnalyzed$PROPDMG * StormDataAnalyzed$PROPDMGEXP2
+StormDataAnalyzed$CROPDMGCost <- StormDataAnalyzed$CROPDMG * StormDataAnalyzed$CROPDMGEXP2
+
+
+```
+
+## Step 3 Analyze the data to determine the weather events with the most economic impact (cost)
+Get the top 10 weather events that cost the most for property and crops. 
+Analyze the top 10 of each before plotting to determine the best way to present the data.
+The "top 10" is an arbitrary number selected, but for reproducibility it is documented as what was selected.
+
+```{r}
+
+CostPropDMGStormData <- aggregate(PROPDMGCost~EVTYPE, data=StormDataAnalyzed, sum, na.rm = TRUE) 
+CostPropDMGStormData <- arrange(CostPropDMGStormData, desc(PROPDMGCost))
+TopCostPropDMGStormData <- CostPropDMGStormData[1:10, ]
+TopCostPropDMGStormData
+
+CostCropDMGStormData <- aggregate(CROPDMGCost~EVTYPE, data=StormDataAnalyzed, sum, na.rm = TRUE) 
+CostCropDMGStormData <- arrange(CostCropDMGStormData, desc(CROPDMGCost))
+TopCostCropDMGStormData <- CostCropDMGStormData[1:10, ]
+TopCostCropDMGStormData
+
+```
+## RESULTS
+## Answer to Question #2 is Floods for property and Drought for crops.
+## Step 4 Summary analysis of weather events with the highest economic impact (cost) 
+Floods have the highest cost for property, and Drought has the highest cost for crops.
+Therefore, plotting them on seperate charts displays the data best.
+
+```{r}
+
+par(mar=c(12,5,3,2))
+barplot(TopCostPropDMGStormData$PROPDMGCost,names.arg=TopCostPropDMGStormData$EVTYPE,las=2,col="Red", main="Top Weather Events Economic Impact On Property In USD")
+
+par(mar=c(12,5,3,2))
+barplot(TopCostCropDMGStormData$CROPDMGCost,names.arg=TopCostCropDMGStormData$EVTYPE,las=2,col="Yellow", main="Top Weather Events Economic Impact On Crops In USD")
+
+```
+
+
+## RESULTS SUMMARY
+Question (1) Tornados cause the most harm to population as measured by fatalities and injuries. 
+
+Question (2) Floods cause the most economic damage to property, and Drought causes the most economic damage to crops.  
+
+
+
+
